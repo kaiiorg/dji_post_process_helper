@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 
 	"github.com/asticode/go-astisub"
 )
@@ -19,8 +18,8 @@ var (
 func main() {
 	flag.Parse()
 
-	rename()
-	//thinSRT()
+	//rename()
+	thinSRT()
 }
 
 type extentions struct {
@@ -85,11 +84,6 @@ func rename() {
 	}
 }
 
-var (
-	// Splits each telemetry value from timingsRe
-	telemetryRe = regexp.MustCompile(`(\w+):\s*([^\s\],]+)`)
-)
-
 func thinSRT() {
 	telemetrySubs, err := astisub.OpenFile(filepath.Join(*basePath, *outBaseName+".srt"))
 	if err != nil {
@@ -103,26 +97,44 @@ func thinSRT() {
 
 	thinnedTelemetrySubs := astisub.NewSubtitles()
 	lastItem := telemetrySubs.Items[0]
+	lastDjiMeta := parseDjiMetaLine(lastItem.Lines[2].Items[0].Text) // TODO need a reliable way of detecting the telemetry line without always assuming it is line 3!
 
 	for _, frame := range telemetrySubs.Items {
 		/*
-		for l, line := range frame.Lines {
-			for li, lineItem := range line.Items {
-				log.Printf("%d:%d:%d %s", frame.Index, l, li, lineItem.Text)
+			for l, line := range frame.Lines {
+				for li, lineItem := range line.Items {
+					log.Printf("%d:%d:%d %s", frame.Index, l, li, lineItem.Text)
+				}
 			}
-		}
 		*/
 
 		// TODO need a reliable way of detecting the telemetry line without always assuming it is line 3!
-		if lastItem.Lines[2].Items[0].Text == frame.Lines[2].Items[0].Text {
+		currentDjiMeta := parseDjiMetaLine(frame.Lines[2].Items[0].Text)
+
+		if metaEqual(lastDjiMeta, currentDjiMeta) {
 			log.Printf("%d has duplicate telemetry as %d\n", frame.Index, lastItem.Index)
 			continue
 		}
 
 		log.Printf("%d has new telemetry\n", frame.Index)
-		// TODO copy frame, update start/end so the data is still continuous
-		thinnedTelemetrySubs.Items = append(thinnedTelemetrySubs.Items, frame)
+		lastDjiMeta.Speed(currentDjiMeta)
+		// Make a continous stream of telemetry by setting the end time of the last item to the start time of the new one
+		lastItem.EndAt = frame.StartAt
+		lastItem.Lines = []astisub.Line{
+			{
+				Items: []astisub.LineItem{
+					{
+						Text: lastDjiMeta.OutputLine(),
+					},
+				},
+			},
+		}
+		// TODO the DiffTime value on the first line hasn't been updated and will be wrong!
+
+		// Append the last item to the list, then replace it with the new one
+		thinnedTelemetrySubs.Items = append(thinnedTelemetrySubs.Items, lastItem)
 		lastItem = frame
+		lastDjiMeta = currentDjiMeta
 	}
 
 	log.Printf("Thinned %d frames down to %d\n", len(telemetrySubs.Items), len(thinnedTelemetrySubs.Items))
