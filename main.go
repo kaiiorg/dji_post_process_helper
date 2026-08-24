@@ -13,13 +13,20 @@ var (
 	basePath    = flag.String("b", "./", "base path where all expected files live")
 	inBaseName  = flag.String("i", "", "Original base name used by all files, such as DJI_20260823130819_0051_D")
 	outBaseName = flag.String("o", "", "New base name to be used by all files")
+
+	skipRename = flag.Bool("skip-rename", false, "skip the rename step")
+	skipThin = flag.Bool("skip-thin", false, "skip the SRT thinning step")
 )
 
 func main() {
 	flag.Parse()
 
-	//rename()
-	thinSRT()
+	if !*skipRename {
+		rename()
+	}
+	if !*skipThin {
+		thinSRT()
+	}
 }
 
 type extentions struct {
@@ -97,7 +104,7 @@ func thinSRT() {
 
 	thinnedTelemetrySubs := astisub.NewSubtitles()
 	lastItem := telemetrySubs.Items[0]
-	lastDjiMeta := parseDjiMetaLine(lastItem.Lines[2].Items[0].Text) // TODO need a reliable way of detecting the telemetry line without always assuming it is line 3!
+	lastDjiMeta := parseDjiMetaLine(lastItem.Lines)
 
 	for _, frame := range telemetrySubs.Items {
 		/*
@@ -108,8 +115,7 @@ func thinSRT() {
 			}
 		*/
 
-		// TODO need a reliable way of detecting the telemetry line without always assuming it is line 3!
-		currentDjiMeta := parseDjiMetaLine(frame.Lines[2].Items[0].Text)
+		currentDjiMeta := parseDjiMetaLine(frame.Lines)
 
 		if metaEqual(lastDjiMeta, currentDjiMeta) {
 			log.Printf("%d has duplicate telemetry as %d\n", frame.Index, lastItem.Index)
